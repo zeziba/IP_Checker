@@ -1,21 +1,23 @@
+#!/usr/bin/env python
+
 from requests import get as r_get
 from smtplib import SMTP
 from email.mime.text import MIMEText as mimeT
 from datetime import datetime
 from getpass import getpass
-import re
 import subprocess
 
 """
-Uses python 3.5+
+Created By: Charles Engen   1/13/2017
 
-This program checks the computers public IP and if it differs from what it knows it will send out an email to update
-the user.
+This program asks for information on an account to use as a email host and an email recipient. After
+collecting this data the program will proceed to check the public IP address, if there is a change detected
+the program will use the supplied email address to send an email about the change in the IP address.
 
-The program also sends out an initial email with the IP address.
+The purpose of this program is to make it so that my home computer can be easily found on the web so that
+I can use it as a server with out a static IP address. So even if it changes I will still have access to the
+material and content that is required.
 """
-
-pattern = re.compile("\d{1,3}.\d{1,3}.\d{1,3}.\d{1,3}")
 
 
 data = {
@@ -26,40 +28,61 @@ data = {
     'username': None,
     'pass': None,
     'server id': 587,
-    'timer': 60,
+    'timer': 1,
     'recipient': None,
-    'IP': None
+    'IP': "",
+    'start': False
 }
 
 
 def populate_data(_data: dict)->bool:
-    for item in _data:
+    """
+    This function populates the data with all the necessary information
+    :param _data: dict object containing the necessary data
+    :return: if function passed, a True value is returned
+    """
+
+    def _get_input(d_type: str)->str:
+        """
+        Function is an internal function that get the user input and returns it, there will be checking
+        added later.
+        :param d_type:
+        :return:
+        """
+        return input("Enter in %s:" % d_type).lower() if d_type != 'pass'\
+            else str(getpass("Enter in your password"))
+
+    m_ask = input("Would you like o override the defaults? Enter Yes or No:\n")
+    for key, item in _data.items():
         if item is None:
-            _data[item] = _get_input(item)
-        else:
-            ask = _get_input("Yes or No, by entering in yes you will override %s" % item)
+            _data[key] = _get_input(key)
+        elif 'Yes' in m_ask.lower():
+            ask = _get_input("Yes or No, by entering in yes you will override: %s" % item)
             if 'yes' in ask:
-                _data[item] = _get_input(item)
-
-
-def _get_input(d_type: str)->str:
-    def __password(_data)->object:
-        import base64
-        return base64.b64encode(_data)
-    return input("Enter in %s" % d_type) if d_type != 'pass' else _get_input(getpass("Enter in your password"))
+                _data[key] = _get_input(key)
+    return True
 
 
 def check_active(site: str)->bool:
+    """
+    Function checks the state of a webpage to see if it is able to be accessed.
+    :param site: give a string of the webpage including the http://
+    :return: completion status
+    """
     return r_get(site).status_code == 200
 
 
 def send_msg(_data: dict)->bool:
+    """
+    Function sends an email with the supplied credentials
+    :param _data: data dictionary that has the requested data
+    :return: status code if the email was sent or not, True or False
+    """
     with SMTP(_data['mail server'], _data['server id']) as ser:
         if ser.starttls()[0] != 220:
             return False
-        import base64
-        ser.login(_data['username'], base64.b64decode(_data['pass']))
-        msg = mimeT(_data['message'])
+        ser.login(_data['username'], _data['pass'])
+        msg = mimeT(_data['message'] % data['IP'])
         msg['From'] = data['username']
         msg['To'] = data['recipient']
         msg['Subject'] = 'New IP address change'
@@ -69,33 +92,35 @@ def send_msg(_data: dict)->bool:
 
 
 def main()->None:
+    """
+    The main loop of the program
+    :return: should not return any value
+    """
+
+    def __populate_mail()->None:
+        """
+        internal function to populate the message and send it
+        :return: nothing is returned
+        """
+        ip = subprocess.Popen(['curl', '-s', data['ip page']], stdout=subprocess.PIPE).communicate()
+        ip = ip[0].decode(data['decode'])
+        if data['IP'] != ip:
+            print(ip)
+            data['IP'] = ip
+            send_msg(data)
+        else:
+            print("No Change")
+
     populate_data(data)
     last_check = datetime.now()
+
     while 1:
+        if not data['start']:
+            data['start'] = True
+            __populate_mail()
         if (datetime.now() - last_check).seconds > data['timer']:
-            ip = subprocess.Popen(['curl', '-s', data['ip page']], stdout=subprocess.PIPE).communicate()
-            ip = ip[0].decode(data['decode'])
-            if data['IP'] != ip:
-                print(ip)
-                data['IP'] = ip
-                send_msg(data)
-            else:
-                print("No Change")
+            __populate_mail()
 
 
 if __name__ == "__main__":
-    # last_check = datetime.now()
-    # while 1:
-    #     if (datetime.now() - last_check).seconds > __time:
-    #         if check_active(_ip_webpage):
-    #             global _ip
-    #             ip = subprocess.Popen(['curl', '-s', _ip_webpage], stdout=subprocess.PIPE).communicate()
-    #             ip = ip[0].decode(decode_type)
-    #             if _ip != ip:
-    #                 print(ip)
-    #                 _ip = ip
-    #                 send_msg(sever_name=__server, ser_num=__server_number, user=__user, password=__pass, rec=__mMail, _msg =message % ip)
-    #             else:
-    #                 print('No Change')
-    #         last_check = datetime.now()
     main()
